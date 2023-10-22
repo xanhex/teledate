@@ -1,0 +1,28 @@
+[tool.black]
+include = '\.pyi?$'
+extend-exclude = '''
+(
+    .venv
+    | __
+    | /\.
+    | tests
+)
+'''
+line_length = 79
+skip-string-normalization = true
+
+[tool.isort]
+profile = "black"
+src_paths = ["."]
+extend_skip = ["tests"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+exclude = ['tests']
+
+[tool.pytest.ini_options]
+norecursedirs = [".venv/*"]
+addopts = "-vv -p no:cacheprovider -p no:warnings --show-capture=no"
+testpaths = ["tests/"]
+python_files = ["test_*.py"]
