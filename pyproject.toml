@@ -15,11 +15,12 @@ skip-string-normalization = true
 profile = "black"
 src_paths = ["."]
 extend_skip = ["tests"]
+line_length = 79
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 ignore_missing_imports = true
-exclude = ['tests']
+exclude = ['tests', '.venv']
 
 [tool.pytest.ini_options]
 norecursedirs = [".venv/*"]

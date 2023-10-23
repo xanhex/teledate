@@ -1,6 +1,7 @@
-pytest
-python-telegram-bot
-matplotlib
 python-decouple
-SQLAlchemy
+python-telegram-bot
+sqlalchemy[asyncio]
+aiosqlite
+matplotlib
 mysqlclient
+pytest

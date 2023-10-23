@@ -19,3 +19,5 @@ Makefile
 bot.log
 requirements_dev.txt
 test.http
+data.db
+*.png
