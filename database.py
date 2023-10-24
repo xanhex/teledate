@@ -14,16 +14,15 @@ from sqlalchemy.orm import (
 )
 
 DB_URL = config('MYSQL_URL', default='sqlite+aiosqlite:///data.db')
+USER_LIMIT = 2
+RECORD_LIMIT = 10
 
-engine = create_async_engine(
-    DB_URL,
-    # connect_args={'check_same_thread': False},
-)
+engine = create_async_engine(DB_URL)
+
 async_session = sessionmaker(
     engine,
     class_=AsyncSession,
     autocommit=False,
-    autoflush=False,
     expire_on_commit=False,
 )
 
@@ -36,7 +35,9 @@ class User(Base):
     __tablename__ = 'user'
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(unique=True, index=True)
-    records: Mapped[list['Record']] = relationship(back_populates='user')
+    records: Mapped[list['Record']] = relationship(
+        back_populates='user', cascade='all, delete',
+    )
 
     def __repr__(self) -> str:
         """To representation."""
@@ -51,14 +52,10 @@ class Record(Base):
     date = mapped_column(
         DateTime(),
         server_default=func.now(),
-        # server_default=datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
     )
 
     user_id: Mapped[int] = mapped_column(ForeignKey('user.id'))
-    user: Mapped[User] = relationship(
-        'User',
-        back_populates='records',
-    )
+    user: Mapped[User] = relationship('User', back_populates='records')
 
     def __repr__(self) -> str:
         """To representation."""
@@ -76,12 +73,21 @@ async def init_models() -> None:
 # CRUD
 
 
-async def get_user(username: str) -> Mapped[User]:
+async def get_user(username: str) -> Mapped[User] | None:
     """Read user from DB."""
     async with async_session() as session:
         async with session.begin():
             return await session.scalar(
                 select(User).where(User.name == username),
+            )
+
+
+async def get_user_count() -> int:
+    """Read user from DB."""
+    async with async_session() as session:
+        async with session.begin():
+            return await session.scalar(
+                select(func.count()).select_from(User),
             )
 
 
@@ -101,25 +107,33 @@ async def create_user(username: str) -> Mapped[User] | str:
                 return f'User {username} already exists!'
 
 
-async def get_last_record(username: str) -> list[Mapped[Record]]:
+async def get_last_user_record(username: str) -> Mapped[Record]:
     """Read user from DB."""
     async with async_session() as session:
         async with session.begin():
             records = await session.scalars(
                 select(Record)
-                .where(user.name == username)
+                .join(User)
+                .where(User.name == username)
                 .order_by(Record.id.desc()),
             )
             return records.first()
 
 
-async def get_records(username: str) -> list[Mapped[Record]]:
+async def get_user_records(username: str) -> list[Mapped[Record]]:
     """Read user from DB."""
     async with async_session() as session:
         async with session.begin():
             return await session.scalars(
-                select(Record).where(user.name == username),
+                select(Record).join(User).where(User.name == username),
             )
+
+
+async def get_all_records() -> list[Mapped[Record]]:
+    """Read user from DB."""
+    async with async_session() as session:
+        async with session.begin():
+            return await session.scalars(select(Record))
 
 
 async def create_record(username: str) -> Mapped[User] | str:
@@ -141,18 +155,25 @@ async def create_record(username: str) -> Mapped[User] | str:
                 return 'Record with such date already exists!'
 
 
+async def delete_user(username: str) -> bool | str:
+    """Read user from DB."""
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user(username)
+            if not user:
+                return f'User {username} does not exist!'
+            try:
+                await session.delete(user)
+                return True
+            except IntegrityError as err:
+                await session.rollback()
+                return err
+
+
 if __name__ == '__main__':
     asyncio.run(init_models())
-    user = asyncio.run(create_user('Bruno'))
-    print(user)
-    user = asyncio.run(get_user('Bruno'))
-    print(user)
-    record = asyncio.run(create_record('Bruno'))
-    print(record)
-    asyncio.run(asyncio.sleep(1))
-    record = asyncio.run(create_record('Bruno'))
-    print(record)
-    records = asyncio.run(get_records('Bruno'))
-    print(*records)
-    record = asyncio.run(get_last_record('Bruno'))
-    print(record)
+    asyncio.run(create_user('Bruno'))
+    asyncio.run(create_user('Mars'))
+    # records = asyncio.run(get_records('Mars'))
+    # records = asyncio.run(get_records('New'))
+    # print(*records)
