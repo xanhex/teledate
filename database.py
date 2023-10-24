@@ -15,7 +15,7 @@ from sqlalchemy.orm import (
 
 DB_URL = config('MYSQL_URL', default='sqlite+aiosqlite:///data.db')
 USER_LIMIT = 2
-RECORD_LIMIT = 10
+RECORD_LIMIT = 15
 
 engine = create_async_engine(DB_URL)
 
@@ -36,7 +36,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(unique=True, index=True)
     records: Mapped[list['Record']] = relationship(
-        back_populates='user', cascade='all, delete',
+        back_populates='user',
+        cascade='all, delete',
     )
 
     def __repr__(self) -> str:
@@ -172,8 +173,9 @@ async def delete_user(username: str) -> bool | str:
 
 if __name__ == '__main__':
     asyncio.run(init_models())
-    asyncio.run(create_user('Bruno'))
-    asyncio.run(create_user('Mars'))
+    # user = asyncio.run(create_user('Bruno'))
+    # print(type(user))
+    # asyncio.run(create_user('Mars'))
     # records = asyncio.run(get_records('Mars'))
     # records = asyncio.run(get_records('New'))
     # print(*records)

@@ -15,7 +15,14 @@ from telegram.ext import (
     filters,
 )
 
-from database import USER_LIMIT, get_user, get_user_count
+from database import (
+    USER_LIMIT,
+    User,
+    create_user,
+    delete_user,
+    get_user,
+    get_user_count,
+)
 
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')
 
@@ -32,6 +39,11 @@ MAIN = range(1)
 # ax.set_xlabel('Date')
 # plt.savefig('foo.png')
 
+start_reply_markup = ReplyKeyboardMarkup(
+    [[KeyboardButton('Start')]],
+    resize_keyboard=True,
+    is_persistent=True,
+)
 main_reply_markup = ReplyKeyboardMarkup(
     keyboard=[
         [
@@ -69,7 +81,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(
         'Database does not exists. Try to set up one?',
         reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton('Database')]],
+            [[KeyboardButton('Manage database')]],
             resize_keyboard=True,
             is_persistent=True,
         ),
@@ -84,25 +96,36 @@ async def database(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.get('database_exists'),
     )
     if db_exists:
-        text = 'Database exists. Do you want to delete it?'
-        keyboard = [
-            [KeyboardButton('Delete database'), KeyboardButton('Cancel')],
-        ]
-    elif await get_user_count() < USER_LIMIT:
-        text = 'Create the database?'
-        keyboard = [
-            [KeyboardButton('Create database'), KeyboardButton('Cancel')],
-        ]
-    else:
         await update.effective_message.reply_text(
-            "Can't create the database because the quota is over.",
+            'Database exists. Do you want to delete it?',
+            reply_markup=ReplyKeyboardMarkup(
+                [
+                    [
+                        KeyboardButton('Delete database'),
+                        KeyboardButton('Cancel'),
+                    ],
+                ],
+                resize_keyboard=True,
+                is_persistent=True,
+            ),
         )
-        return await end_conversation(update, context)
-
+        return DB_MANAGE
+    if await get_user_count() >= USER_LIMIT:
+        return await end_conversation(
+            update,
+            context,
+            reply_text="Can't create the database because the quota is over.",
+            reply_markup=start_reply_markup,
+        )
     await update.effective_message.reply_text(
-        text,
+        'Create the database?',
         reply_markup=ReplyKeyboardMarkup(
-            keyboard,
+            [
+                [
+                    KeyboardButton('Create database'),
+                    KeyboardButton('Cancel'),
+                ],
+            ],
             resize_keyboard=True,
             is_persistent=True,
         ),
@@ -116,45 +139,63 @@ async def database_manage(
 ) -> None:
     """Send a message when the command /start is issued."""
     db_exists = context.user_data.get('database_exists')
+    # Database exists
+    if update.effective_message.text == 'Cancel' and db_exists:
+        await update.effective_message.reply_text(
+            'Deletion was canceled',
+            reply_markup=main_reply_markup,
+        )
+        return MAIN
+    if db_exists and update.effective_message.text == 'Delete database':
+        db_del = await delete_user(update.effective_user.username)
+        if not db_del:
+            return await end_conversation(
+                update,
+                context,
+                reply_text="Can't delete database",
+                reply_markup=start_reply_markup,
+            )
+        context.user_data['database_exists'] = False
+        return await end_conversation(
+            update,
+            context,
+            reply_text='Database has been deleted',
+            reply_markup=start_reply_markup,
+        )
+    # Database doesn't exists
     if not db_exists and update.effective_message.text == 'Create database':
+        user_created = await create_user(update.effective_user.username)
+        if not isinstance(user_created, User):
+            return await end_conversation(
+                update,
+                context,
+                reply_text="Can't create database",
+                reply_markup=start_reply_markup,
+            )
         await update.effective_message.reply_text(
             'Database has been created',
             reply_markup=main_reply_markup,
         )
         context.user_data['database_exists'] = True
         return MAIN
-    if db_exists and update.effective_message.text == 'Delete database':
-        await update.message.reply_text(
-            'Database has been deleted',
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        context.user_data['database_exists'] = False
-        await end_conversation(update, context)
-    if update.effective_message.text == 'Cancel' and db_exists:
-        await update.effective_message.reply_text(
-            'What would you like to do?',
-            reply_markup=main_reply_markup,
-        )
-        return MAIN
-    await update.effective_message.reply_text(
-        'Database was not created',
-        reply_markup=ReplyKeyboardRemove(),
+    return await end_conversation(
+        update,
+        context,
+        reply_text='Database was not created',
+        reply_markup=start_reply_markup,
     )
-    return await end_conversation(update, context)
 
 
 async def end_conversation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
+    reply_text: str = 'Bye! To talk again send /start',
+    reply_markup: ReplyKeyboardMarkup = start_reply_markup,
 ) -> int:
     """Cancels and ends the conversation."""
     await update.effective_message.reply_text(
-        f'Bye, {update.effective_user.username}! To talk again send /start',
-        reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton('Start')]],
-            resize_keyboard=True,
-            is_persistent=True,
-        ),
+        reply_text,
+        reply_markup=reply_markup,
     )
     return ConversationHandler.END
 
@@ -172,7 +213,6 @@ async def main_messages(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Echo the user message."""
-
     match update.effective_message.text:
         case 'Status':
             await update.effective_message.reply_text('Status')
@@ -187,11 +227,12 @@ async def main_messages(
 def main() -> None:
     """Start the bot."""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
-    db_conv_handler = ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[
             MessageHandler(
-                filters.Regex('^(Database|/database)$'),
-                database),
+                filters.Regex('^(Manage database|/database)$'), database,
+            ),
+            MessageHandler(filters.Regex('^(Start|/start)$'), start),
         ],
         states={
             DB: [MessageHandler(~filters.Regex('^(/end)$'), invalid_input)],
@@ -205,40 +246,25 @@ def main() -> None:
                 MessageHandler(~filters.Regex('^(/end)$'), invalid_input),
             ],
             MAIN: [
-                CommandHandler('database', database),
                 MessageHandler(
                     filters.Regex('^(Status|Update|Reminder|Graph)$'),
                     main_messages,
                 ),
-                MessageHandler(~filters.Regex('^(/end)$'), invalid_input),
-            ],
-        },
-        fallbacks=[CommandHandler('end', end_conversation)],
-    )
-    main_conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex('^(Start|/start)$'), start),
-        ],
-        states={
-            MAIN: [
                 MessageHandler(
-                    filters.Regex('^(Status|Update|Reminder|Graph)$'),
-                    main_messages,
+                    ~filters.Regex('^(/end|Manage database|/database)$'),
+                    invalid_input,
                 ),
-                MessageHandler(~filters.Regex('^(/end)$'), invalid_input),
             ],
         },
         fallbacks=[
             CommandHandler('end', end_conversation),
             MessageHandler(
-                filters.Regex('^(Database|/database)$'),
-                database,
+                filters.Regex('^(Manage database|/database)$'), database,
             ),
         ],
     )
-    application.add_handler(db_conv_handler)
-    application.add_handler(main_conv_handler)
-    application.add_handler(CommandHandler('end', end_conversation))
+
+    application.add_handler(conv_handler)
     application.add_handler(MessageHandler(filters.ALL, invalid_input))
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
