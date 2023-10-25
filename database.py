@@ -15,7 +15,7 @@ from sqlalchemy.orm import (
 
 DB_URL = config('MYSQL_URL', default='sqlite+aiosqlite:///data.db')
 USER_LIMIT = 2
-RECORD_LIMIT = 15
+RECORD_LIMIT = 30
 
 engine = create_async_engine(DB_URL)
 
@@ -60,7 +60,7 @@ class Record(Base):
 
     def __repr__(self) -> str:
         """To representation."""
-        return self.date.strftime('%d/%m/%Y %H:%M:%S')
+        return self.date.strftime('%d.%m.%Y %H:%M:%S')
 
 
 async def init_models() -> None:
@@ -137,7 +137,7 @@ async def get_all_records() -> list[Mapped[Record]]:
             return await session.scalars(select(Record))
 
 
-async def create_record(username: str) -> Mapped[User] | str:
+async def create_record(username: str) -> Mapped[Record] | str:
     """Read user from DB."""
     async with async_session() as session:
         async with session.begin():
@@ -171,11 +171,44 @@ async def delete_user(username: str) -> bool | str:
                 return err
 
 
+async def delete_records(
+    username: str,
+    count: int = 15,
+) -> bool | str:
+    """Read user from DB."""
+    async with async_session() as session:
+        async with session.begin():
+            records = await session.scalars(
+                select(Record)
+                .join(User)
+                .where(User.name == username)
+                .limit(count),
+            )
+            try:
+                for record in records.all():
+                    await session.delete(record)
+                return True
+            except IntegrityError as err:
+                await session.rollback()
+                return err
+
+
 if __name__ == '__main__':
     asyncio.run(init_models())
     # user = asyncio.run(create_user('Bruno'))
-    # print(type(user))
-    # asyncio.run(create_user('Mars'))
-    # records = asyncio.run(get_records('Mars'))
-    # records = asyncio.run(get_records('New'))
+
+    # asyncio.run(create_record('Bruno'))
+    # asyncio.run(asyncio.sleep(1))
+
+    # asyncio.run(create_record('Bruno'))
+    # asyncio.run(asyncio.sleep(1))
+
+    # asyncio.run(create_record('Bruno'))
+    # records = asyncio.run(get_user_records('Bruno'))
+    # print(*records)
+
+    # asyncio.run(delete_records('Bruno', limit=2))
+    # records = asyncio.run(get_user_records('Bruno'))
+    # print(*records)
+    # records = asyncio.run(get_all_records())
     # print(*records)
