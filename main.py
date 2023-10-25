@@ -1,11 +1,24 @@
+"""
+Asyncronius Telegram bot for keeping up with the date.
+
+Bot commads:
+
+/start - Start bot
+/database - Manage database
+/manual <date time> - Create manual record from the main menu
+/end - End conversation
+
+"""
 import io
 from datetime import datetime, timedelta
+from enum import Enum
 from functools import partial
 from math import floor
 
 import matplotlib.pyplot as plt
 from decouple import config
 from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -32,8 +45,14 @@ from database import (
 
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')
 
-DB, DB_MANAGE = range(2)
-MAIN = range(1)
+DB, DB_MANAGE, MAIN, REMINDER = range(4)
+
+
+class RecordInfoMode(Enum):
+    FULL = 1
+    RECORD_INFO = 2
+    DIFFERENCE = 3
+
 
 start_reply_markup = ReplyKeyboardMarkup(
     [[KeyboardButton('Start')]],
@@ -214,6 +233,36 @@ async def invalid_input(
         await update.effective_message.reply_text('Invalid input!')
 
 
+async def manual_record(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not context.args:
+        await update.effective_message.reply_text(
+            (
+                'Example of manual record command:\n'
+                '`/manual 01.01.2000 10:00`\n'
+            ),
+            reply_markup=main_reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+        return
+    try:
+        await update.effective_message.reply_text(
+            await add_record(update.effective_user.username, context.args),
+            reply_markup=main_reply_markup,
+        )
+    except ValueError:
+        await update.effective_message.reply_text(
+            (
+                'Example of manual record command:\n'
+                '`/manual 01.01.2000 10:00`\n'
+            ),
+            reply_markup=main_reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+
 async def main_messages(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -226,7 +275,24 @@ async def main_messages(
         case 'Add a record':
             text = await add_record(username)
         case 'Reminder':
-            text = await set_reminder(username)
+            button_mode = '/reminder 9 48'
+            if context.job_queue.get_jobs_by_name(username):
+                button_mode = '/reminder'
+            await update.effective_message.reply_text(
+                (
+                    'Set:\n'
+                    '`/reminder <hour> <hours_interval>`\n'
+                    'Unset\n'
+                    '`/reminder`\n'
+                ),
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=ReplyKeyboardMarkup(
+                    [[KeyboardButton(button_mode)]],
+                    resize_keyboard=True,
+                    is_persistent=True,
+                ),
+            )
+            return REMINDER
         case 'Graph':
             graph = await get_graph(username)
             if not isinstance(graph, str):
@@ -234,18 +300,88 @@ async def main_messages(
                     graph,
                     reply_markup=main_reply_markup,
                 )
-                return
+                return None
             text = graph
     await update.effective_message.reply_text(
         text,
         reply_markup=main_reply_markup,
+        parse_mode=ParseMode.MARKDOWN_V2,
     )
-    return
+    return None
 
 
-async def set_reminder(username: str) -> str:
+async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the alarm message."""
+    time_since = await get_status(context.job.data, RecordInfoMode.DIFFERENCE)
+    await context.bot.send_message(
+        context.job.chat_id,
+        text=f'`{time_since}`\nSince the last record',
+        parse_mode=ParseMode.MARKDOWN_V2,
+    )
+
+
+async def reminder(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
     """Schedule the reminder task for the user."""
-    return 'Reminder is set'
+    chat_id = update.effective_message.chat_id
+    username = update.effective_user.username
+    # args[0] should contain the time for the timer in seconds
+    try:
+        current_jobs = context.job_queue.get_jobs_by_name(username)
+        if current_jobs:
+            for job in current_jobs:
+                job.schedule_removal()
+        if not context.args and current_jobs:
+            await update.effective_message.reply_text(
+                'Reminder has been disabled',
+                reply_markup=main_reply_markup,
+            )
+            return MAIN
+        start, interval = map(int, context.args)
+        if interval < 0:
+            await update.effective_message.reply_text(
+                'Use only positive values for time interval',
+            )
+            return None
+        record = await get_last_user_record(update.effective_user.username)
+        if (not isinstance(record, Record)) or (
+            isinstance(record, Record)
+            and not isinstance(record.date, datetime)
+        ):
+            await update.effective_message.reply_text(
+                "Can't get the last record",
+                reply_markup=main_reply_markup,
+            )
+            return MAIN
+        context.job_queue.run_repeating(
+            alarm,
+            timedelta(hours=interval),
+            # interval,
+            first=start,
+            chat_id=chat_id,
+            name=username,
+            data=username,
+        )
+        await update.effective_message.reply_text(
+            (
+                f'The reminder has been set on {start}:00 '
+                f'for every {interval} hours'
+            ),
+            reply_markup=main_reply_markup,
+        )
+        return MAIN
+    except (IndexError, ValueError):
+        await update.effective_message.reply_text(
+            (
+                'Set:\n'
+                '`/reminder <hour> <hours_interval>`\n'
+                'Unset\n'
+                '`/reminder`\n'
+            ),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
 
 
 async def get_graph(username: str):
@@ -283,19 +419,28 @@ async def clear_old_record(username: str):
     return None
 
 
-async def add_record(username: str):
+async def add_record(username: str, manual: list[str] = None):
     extra_message = await clear_old_record(username)
-    record = await create_record(username)
+    if manual:
+        record = await create_record(
+            username,
+            date=datetime.strptime(' '.join(manual), '%d.%m.%Y %H:%M'),
+        )
+    else:
+        record = await create_record(username)
     if not isinstance(record, Record):
         return "Can't create a record"
     # Moscow Time (UTC+3)
     return (
         (f'{extra_message}\n' if extra_message else '')
-        + f"{(record.date + timedelta(hours=3)).strftime('%d.%m.%Y %H:%M:%S')}"
+        + f"`{(record.date + timedelta(hours=3)).strftime('%d.%m.%Y %H:%M')}`"
     )
 
 
-async def get_status(username: str):
+async def get_status(
+    username: str,
+    mode: RecordInfoMode = RecordInfoMode.FULL,
+):
     record = await get_last_user_record(username)
     if (not isinstance(record, Record)) or (
         isinstance(record, Record) and not isinstance(record.date, datetime)
@@ -310,19 +455,29 @@ async def get_status(username: str):
     sec_diff = round(diff_dt.total_seconds()) - min_diff * 60
     days_case = 'day' if diff_dt.days == 1 else 'days'
     hours_case = 'hour' if hours_diff == 1 else 'hours'
+    if mode is RecordInfoMode.RECORD_INFO:
+        return record_info
+    if mode == RecordInfoMode.DIFFERENCE:
+        if diff_dt.days:
+            return f'{diff_dt.days} {days_case} {hours_diff} {hours_case}'
+        if hours_diff:
+            return f'{hours_diff} {hours_case} {min_diff} min'
+        if min_diff:
+            return f'{min_diff} min {sec_diff} sec'
+        return f'{sec_diff} sec'
     if diff_dt.days:
         return (
-            f'• {record_info}\n'
-            f'• {diff_dt.days} {days_case} {hours_diff} {hours_case} ago'
+            f'`{record_info}`\n'
+            f' {diff_dt.days} {days_case} {hours_diff} {hours_case} ago'
         )
     if hours_diff:
         return (
-            f'• {record_info}\n'
-            f'• {hours_diff} {hours_case} {min_diff} min ago'
+            f'`{record_info}`\n'
+            f'{hours_diff} {hours_case} {min_diff} min ago'
         )
     if min_diff:
-        return f'• {record_info}\n' f'• {min_diff} min {sec_diff} sec ago'
-    return f'• {record_info}\n' f'• {sec_diff} sec ago'
+        return f'`{record_info}`\n' f'{min_diff} min {sec_diff} sec ago'
+    return f'`{record_info}`\n' f'{sec_diff} sec ago'
 
 
 def main() -> None:
@@ -348,10 +503,18 @@ def main() -> None:
                 MessageHandler(~filters.Regex('^(/end)$'), invalid_input),
             ],
             MAIN: [
+                CommandHandler('manual', manual_record),
                 MessageHandler(
                     filters.Regex('^(Status|Add a record|Reminder|Graph)$'),
                     main_messages,
                 ),
+                MessageHandler(
+                    ~filters.Regex('^(/end|Manage database|/database)$'),
+                    invalid_input,
+                ),
+            ],
+            REMINDER: [
+                CommandHandler('reminder', reminder),
                 MessageHandler(
                     ~filters.Regex('^(/end|Manage database|/database)$'),
                     invalid_input,

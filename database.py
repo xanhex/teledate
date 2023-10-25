@@ -1,5 +1,6 @@
 """Database settings and services."""
 import asyncio
+import datetime
 
 from decouple import config
 from sqlalchemy import DateTime, ForeignKey, func, select
@@ -137,7 +138,10 @@ async def get_all_records() -> list[Mapped[Record]]:
             return await session.scalars(select(Record))
 
 
-async def create_record(username: str) -> Mapped[Record] | str:
+async def create_record(
+    username: str,
+    date: datetime.datetime = None,
+) -> Mapped[Record] | str:
     """Read user from DB."""
     async with async_session() as session:
         async with session.begin():
@@ -147,6 +151,11 @@ async def create_record(username: str) -> Mapped[Record] | str:
             record = Record(
                 user_id=user.id,
             )
+            if date and isinstance(date, datetime.datetime):
+                record = Record(
+                    user_id=user.id,
+                    date=date,
+                )
             session.add(record)
             try:
                 await session.commit()
@@ -197,15 +206,17 @@ if __name__ == '__main__':
     asyncio.run(init_models())
     # user = asyncio.run(create_user('Bruno'))
 
-    # asyncio.run(create_record('Bruno'))
-    # asyncio.run(asyncio.sleep(1))
-
-    # asyncio.run(create_record('Bruno'))
-    # asyncio.run(asyncio.sleep(1))
-
-    # asyncio.run(create_record('Bruno'))
+    # asyncio.run(
+    #     create_record('Bruno', date=datetime.datetime(2023, 10, 25, 19)))
     # records = asyncio.run(get_user_records('Bruno'))
     # print(*records)
+
+    # asyncio.run(asyncio.sleep(1))
+
+    # asyncio.run(create_record('Bruno'))
+    # asyncio.run(asyncio.sleep(1))
+
+    # asyncio.run(create_record('Bruno'))
 
     # asyncio.run(delete_records('Bruno', limit=2))
     # records = asyncio.run(get_user_records('Bruno'))
