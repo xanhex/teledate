@@ -1,37 +1,43 @@
-# Telegram бот для проверки статуса домашки Практикума
+# Teledate
 
-Приложение, которое позволяет автоматически отслеживать статус домашки
-на Практикуме и получать уведомления в телегу.
+Asynchronous Telegram bot for keeping up with activities timelines.
 
-## Технологии
+Bot commands:
+  - `/start` - Start the bot
+  - `/database` - Manage the database
+  - `/end` - End the conversation.
 
-- Python 3.9.10
 
-## Библиотеки и модули
+## Technologies
 
-- python-telegram-bot
-- requests
+- Python
+- Python Telegram Bot
+- Asyncio
+- SQLAlchemy
+- Pytest
+- MySQL
+- Uvicorn
+- Docker
 
-## Используемые стандарты
+## Standards
 
 - pep8
 - flake8
 - black
-- mypy
 - pymarkdown
 
-## Как развернуть
+## How to run
 
-1. Склонируйте проект в рабочую директорию.
-2. Создайте виртуальное окружение.
-3. Установите зависимости из файла `requirements.txt`.
-4. Получите [токен](
-https://oauth.yandex.ru/authorize?response_type=token&client_id=1d0b9dd4d652455a9eb710d450ff456a)
-для авторизации.
-5. В корне проекта создайте файл с переменными окружения `.env`
+1. Clone the repository.
+2. From the root folder run:
 
-     ```.env
-    PRACTICUM_TOKEN=XXX
-    TELEGRAM_TOKEN=XXX
-    TELEGRAM_CHAT_ID=123
+    ```bash
+    docker compose up
     ```
+
+## TBD
+
+- Add `Pytest` tests
+- Add logging
+- Add the ability to add multiple records for a user
+- Add demonization (`Uvicorn`) and `Docker`

@@ -89,7 +89,8 @@ def get_time_since(record_dt: datetime.datetime) -> str:
 
 
 async def get_graph(
-    records_dt: list[datetime.datetime], title: str = 'Default',
+    records_dt: list[datetime.datetime],
+    title: str = 'Default',
 ) -> bytes | None:
     """Get a graph of the user's records."""
     x = []

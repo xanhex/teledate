@@ -19,5 +19,6 @@ Makefile
 bot.log
 requirements_dev.txt
 data.db
+sqlite.db
 pyproject.toml
 setup.cfg

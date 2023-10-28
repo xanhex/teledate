@@ -21,7 +21,11 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
-DB_URL = config('MYSQL_URL', default='sqlite+aiosqlite:///data.db')
+from exceptions import TeledateError
+
+DB_URL = config(
+    'MYSQL_URL', default='sqlite+aiosqlite:///teledate/data/sqlite.db',
+)
 USER_LIMIT = 2
 RECORDS_LIMIT = 30
 
@@ -90,6 +94,7 @@ async def init_models() -> None:
 
 # CRUD
 
+
 async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
     """
     Get a user ID in the database.
@@ -104,7 +109,7 @@ async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
             )
             try:
                 return user.id, user.activity
-            except Exception:
+            except TeledateError:
                 return None, None
 
 
@@ -137,7 +142,7 @@ async def create_user(
         try:
             await session.commit()
             return user.id, user.activity
-        except Exception:
+        except TeledateError:
             await session.rollback()
             return None, None
 
@@ -153,7 +158,7 @@ async def get_last_user_record(user_id: int) -> datetime.datetime | None:
             )
             try:
                 return records.first().date
-            except Exception:
+            except TeledateError:
                 return None
 
 
@@ -166,7 +171,7 @@ async def get_user_records(user_id: int) -> list[datetime.datetime] | None:
             )
             try:
                 return [record.date for record in records]
-            except Exception:
+            except TeledateError:
                 return None
 
 
@@ -177,7 +182,7 @@ async def get_all_records() -> list[datetime.datetime] | None:
             records: list[Record] = await session.scalars(select(Record))
             try:
                 return [record.date for record in records]
-            except Exception:
+            except TeledateError:
                 return None
 
 
@@ -203,7 +208,7 @@ async def create_record(
             try:
                 await session.commit()
                 return record.date
-            except Exception:
+            except TeledateError:
                 await session.rollback()
                 return None
 
@@ -216,7 +221,7 @@ async def delete_user(user_id: int) -> bool:
                 user = await session.get(User, user_id)
                 await session.delete(user)
                 return True
-            except Exception:
+            except TeledateError:
                 return False
 
 
@@ -237,7 +242,7 @@ async def delete_records(
                 for record in records:
                     await session.delete(record)
                 return True
-            except Exception:
+            except TeledateError:
                 await session.rollback()
                 return False
 

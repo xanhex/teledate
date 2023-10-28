@@ -1,10 +1,10 @@
 """
-Asynchronous Telegram bot for keeping up with the dates.
+Asynchronous Telegram bot for keeping up with activities timelines.
 
 Bot commands:
-    - `/start` - Start bot
-    - `/database` - Manage database
-    - `/end` - End conversation
+    - `/start` - Start the bot
+    - `/database` - Manage the database
+    - `/end` - End the conversation
 """
 import datetime
 import re
@@ -23,6 +23,7 @@ from telegram.ext import (
 )
 
 import database as db
+from exceptions import TeledateError
 from utils import ReplyMarkups, get_graph, get_time_since
 
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')
@@ -204,7 +205,7 @@ async def database_activity(
         context.user_data['db_user_id'] = db_user_id
         context.user_data['db_user_activity'] = activity
         return MAIN
-    except Exception:
+    except TeledateError:
         await update.effective_message.reply_text(
             "Can't create database. Try another activity name",
         )
@@ -253,7 +254,7 @@ async def main_messages(
                         else ReplyMarkups.main,
                     )
                     return None
-                except Exception:
+                except TeledateError:
                     text = "Can't load the graph"
         case 'Reminder' | 'Reminder: On' | 'Reminder: Off':
             await update.effective_message.reply_text(
@@ -389,6 +390,7 @@ async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # Helpers
 
+
 async def get_status(db_user_id: int) -> tuple[str] | None:
     """
     Get user's record info.
@@ -408,7 +410,8 @@ async def get_status(db_user_id: int) -> tuple[str] | None:
 
 
 async def add_record(
-    db_user_id: int, year_time: str | None = None,
+    db_user_id: int,
+    year_time: str | None = None,
 ) -> str | None:
     """
     Create a new user's record.
@@ -452,7 +455,7 @@ async def add_record(
                 '%d.%m.%Y %H:%M',
             )
         return f'`{record_date}`\n{extra_message}'
-    except Exception:
+    except TeledateError:
         return None
 
 
@@ -481,6 +484,7 @@ async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # Main bot cycle
+
 
 def main() -> None:
     """Start the main bot cycle."""
