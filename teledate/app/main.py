@@ -12,7 +12,9 @@ import re
 from functools import partial
 from pathlib import Path
 
+import database as db
 from decouple import config
+from exceptions import TeledateError
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -23,20 +25,16 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from utils import ReplyMarkups, get_graph, get_time_since
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-filePath = BASE_DIR / 'data' / 'teledate.log'
+LOGFILE = BASE_DIR / 'data' / 'teledate.log'
 
-filePath.touch(exist_ok=True)
-
-import database as db
-from exceptions import TeledateError
-from utils import ReplyMarkups, get_graph, get_time_since
-
+LOGFILE.touch(exist_ok=True)
 logging.basicConfig(
     level=logging.DEBUG,
-    filename=filePath,
+    filename=LOGFILE,
     filemode='w',
     encoding='utf-8',
     format='%(asctime)s %(name)s [%(levelname)s] %(message)s',
@@ -55,6 +53,12 @@ DB, DB_MANAGE, DB_ACTIVITY, MAIN, REMINDER = range(5)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation when `/start` command is issued."""
     username = update.effective_user.username
+    if not username:
+        await update.effective_message.reply_text(
+            'To work the me you need to set up your Telegram username',
+            reply_markup=ReplyMarkups.end,
+        )
+        return ConversationHandler.END
     db_user_id = context.user_data.get('db_user_id')
     db_user_activity = context.user_data.get('db_user_activity')
     reminder = context.user_data.get('reminder')
@@ -95,6 +99,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def database(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Get database options when `/database` command is issued."""
+    username = update.effective_user.username
+    if not username:
+        await update.effective_message.reply_text(
+            'To work the me you need to set up your Telegram username',
+            reply_markup=ReplyMarkups.end,
+        )
+        return ConversationHandler.END
     db_user_id = context.user_data.get('db_user_id')
     db_user_activity = context.user_data.get('db_user_activity')
     if not db_user_id:
@@ -210,7 +221,12 @@ async def database_activity(
         )
         return ConversationHandler.END
     try:
-        activity = message.capitalize() if message != 'Default' else None
+        activity = message.capitalize() if message else 'Default'
+        if not re.match(
+            r'^([a-zA-Z]|\s|\d){1,50}$',
+            activity,
+        ):
+            raise TeledateError
         db_user_id, activity = await db.create_user(username, activity)
         await update.effective_message.reply_text(
             '*Database has been created*\n\n'
@@ -276,7 +292,10 @@ async def main_messages(
                     text = "Can't load the graph"
         case 'Reminder' | 'Reminder: On' | 'Reminder: Off':
             await update.effective_message.reply_text(
-                ('You have an active reminder. Unset?')
+                (
+                    f'{context.job_queue.get_jobs_by_name(update.effective_user.username)[0].data[2]}\n\n'
+                    r'Unset\?'
+                )
                 if reminder
                 else (
                     r'`Set (default interval: 48)`' + '\n'
@@ -349,36 +368,39 @@ async def reminder_manage(
                 )
                 return MAIN
         if not unset:
-            params: list | None = re.findall(r'(\d{2})', command)
+            params: list | None = re.findall(r'(\d{1,2})', command)
             interval, start = datetime.timedelta(hours=48), datetime.time(9)
+            every_hours = 48
             if params:
-                interval = datetime.time(int(params[0]))
+                interval = datetime.timedelta(hours=int(params[0]))
+                every_hours = int(params[0])
             record_date: datetime.datetime = await db.get_last_user_record(
                 db_user_id,
             )
-            start = record_date
+            start = record_date + datetime.timedelta(hours=3)
             # interval = 5  # For 5 sec inteval tests
+            message = (
+                f'{db_user_activity}\n\n'
+                f'The reminder has been set on {start.strftime("%H:%M")} '
+                f'for every {every_hours} hours'
+            )
             context.job_queue.run_repeating(
                 alarm,
                 interval,
                 first=start,
                 chat_id=chat_id,
                 name=username,
-                data=(db_user_id, db_user_activity),
+                data=(db_user_id, db_user_activity, message),
             )
             context.user_data['reminder'] = True
             await update.effective_message.reply_text(
-                (
-                    f'{db_user_activity}\n\n'
-                    f'The reminder has been set on {start.strftime("%H:%M")} '
-                    f'for every {interval} hours'
-                ),
+                message,
                 reply_markup=ReplyMarkups.main_reminder,
             )
             return MAIN
     except (IndexError, ValueError):
         await update.effective_message.reply_text(
-            ('`Set <hours_interval>`\n\n' '`Unset`'),
+            '`Unset`' if reminder else '`Set <hours_interval>`',
             parse_mode=ParseMode.MARKDOWN_V2,
         )
 
@@ -399,8 +421,14 @@ async def invalid_input(
 
 async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """End the conversation when `/end` command is issued."""
+    username = update.effective_user.username
+    message = (
+        f'Goodbye, {username}.'
+        if username
+        else 'To work the me you need to set up your Telegram username'
+    )
     await update.effective_message.reply_text(
-        f'Goodbye, {update.effective_user.username}.',
+        message,
         reply_markup=ReplyMarkups.end,
     )
     return ConversationHandler.END
@@ -459,12 +487,14 @@ async def add_record(
                     hours=3,
                 )
             ):
-                raise
-            if year_time_dt > datetime.datetime.today():
-                raise
+                raise TeledateError
+            if year_time_dt > datetime.datetime.today() + datetime.timedelta(
+                hours=3,
+            ):
+                raise TeledateError
             record_date = await db.create_record(
                 db_user_id,
-                date=year_time_dt,
+                date=year_time_dt - datetime.timedelta(hours=3),
             )
         else:
             record_date = await db.create_record(db_user_id)
@@ -492,7 +522,7 @@ async def clear_old_record(db_user_id: str) -> bool:
 
 async def alarm(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the alarm message to a user."""
-    db_user_id, db_user_activity = context.job.data
+    db_user_id, db_user_activity, starting_hour = context.job.data
     record_info, time_since = await get_status(db_user_id)
     await context.bot.send_message(
         context.job.chat_id,

@@ -73,7 +73,9 @@ class ReplyMarkups:
 
 def get_time_since(record_dt: datetime.datetime) -> str:
     """Get the time passed since the date in human-readable format."""
-    diff_dt = datetime.datetime.today() - record_dt
+    diff_dt = (
+        datetime.datetime.today() + datetime.timedelta(hours=3) - record_dt
+    )
     hours_diff = floor(diff_dt.total_seconds() / 60 / 60) - diff_dt.days * 24
     min_diff = floor(diff_dt.total_seconds() / 60) - hours_diff * 60
     sec_diff = round(diff_dt.total_seconds()) - min_diff * 60

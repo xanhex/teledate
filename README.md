@@ -3,10 +3,10 @@
 Asynchronous Telegram bot for keeping up with activities timelines.
 
 Bot commands:
-  - `/start` - Start the bot
-  - `/database` - Manage the database
-  - `/end` - End the conversation.
 
+- `/start` - Start the bot
+- `/database` - Manage the database
+- `/end` - End the conversation.
 
 ## Technologies
 

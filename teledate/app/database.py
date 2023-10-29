@@ -12,15 +12,14 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.exc import IntegrityError, StatementError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import (
-    Mapped,
-    declarative_base,
-    mapped_column,
-    relationship,
-    sessionmaker,
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.ext.asyncio import (
+    AsyncAttrs,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.orm.exc import UnmappedInstanceError
 
 DB_URL = config(
@@ -31,16 +30,19 @@ USER_LIMIT = 2
 RECORDS_LIMIT = 30
 
 async_engine = create_async_engine(DB_URL)
+# async_engine = create_async_engine(DB_URL, echo=True)
 
 
-async_session = sessionmaker(
+async_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
     async_engine,
     class_=AsyncSession,
-    autocommit=False,
+    # autocommit=False,
     expire_on_commit=False,
 )
 
-Base = declarative_base()
+
+class Base(AsyncAttrs, DeclarativeBase):
+    """Declarative base."""
 
 
 class User(Base):
@@ -48,8 +50,8 @@ class User(Base):
 
     __tablename__ = 'user_table'
     __table_args__ = (
-        CheckConstraint(r"activity REGEXP '^([a-zA-Z]|\s|\d){1,50}$'"),
         CheckConstraint(r"name REGEXP '^([a-zA-Z]|\s|\d){1,50}$'"),
+        CheckConstraint(r"activity REGEXP '^([a-zA-Z]|\s|\d){1,50}$'"),
     )
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
@@ -97,8 +99,8 @@ async def init_models() -> None:
 
 
 async def create_user(
-    username: str,
-    activity: str | None = None,
+    name: str,
+    activity: str = 'Default',
 ) -> tuple[int, str] | tuple[None]:
     """
     Create a user entry in the database.
@@ -110,15 +112,16 @@ async def create_user(
         try:
             async with session.begin():
                 user = User(
-                    name=username,
+                    name=name,
                     activity=activity,
                 )
                 session.add(user)
-            await session.commit()
-            return user.id, user.activity
-        except IntegrityError:
-            await session.rollback()
+        except (IntegrityError, OperationalError):
             return None, None
+        return (
+            await user.awaitable_attrs.id,
+            await user.awaitable_attrs.activity,
+        )
 
 
 async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
@@ -129,22 +132,20 @@ async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
         The user ID and the user activity name, None otherwise.
     """
     async with async_session() as session:
-        async with session.begin():
-            user: User = await session.scalar(
-                select(User).where(User.name == username),
-            )
-            if user:
-                return user.id, user.activity
-            return None, None
+        user: User = await session.scalar(
+            select(User).where(User.name == username),
+        )
+        if user:
+            return user.id, user.activity
+        return None, None
 
 
 async def get_user_count() -> int:
     """Get the number of users in the database."""
     async with async_session() as session:
-        async with session.begin():
-            return await session.scalar(
-                select(func.count()).select_from(User),
-            )
+        return await session.scalar(
+            select(func.count()).select_from(User),
+        )
 
 
 async def create_record(
@@ -158,6 +159,8 @@ async def create_record(
         The user's record info, None otherwise.
     """
     async with async_session() as session:
+        if date is not None and not isinstance(date, datetime.datetime):
+            return None
         try:
             async with session.begin():
                 if not await session.get(User, user_id):
@@ -167,48 +170,43 @@ async def create_record(
                     date=date,
                 )
                 session.add(record)
-            await session.commit()
-            return record.date
-        except StatementError:
-            await session.rollback()
+        except (IntegrityError, OperationalError):
             return None
+        return await record.awaitable_attrs.date
 
 
 async def get_last_user_record(user_id: int) -> datetime.datetime | None:
     """Get info on the last user's record in the database."""
     async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(
-                select(Record)
-                .where(Record.user_id == user_id)
-                .order_by(Record.id.desc()),
-            )
-            record = records.first()
-            if record:
-                return record.date
-            return None
+        records: list[Record] = await session.scalars(
+            select(Record)
+            .where(Record.user_id == user_id)
+            .order_by(Record.id.desc()),
+        )
+        record = records.first()
+        if record:
+            return await record.awaitable_attrs.date
+        return None
 
 
 async def get_user_records(user_id: int) -> list[datetime.datetime] | None:
     """Get the dates of the user's records in the database."""
     async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(
-                select(Record).where(Record.user_id == user_id),
-            )
-            if records:
-                return [record.date for record in records]
-            return None
+        records: list[Record] = await session.scalars(
+            select(Record).where(Record.user_id == user_id),
+        )
+        if records:
+            return [await record.awaitable_attrs.date for record in records]
+        return None
 
 
 async def get_all_records() -> list[datetime.datetime] | None:
     """Get the dates of all records in the database."""
     async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(select(Record))
-            if records:
-                return [record.date for record in records]
-            return None
+        records: list[Record] = await session.scalars(select(Record))
+        if records:
+            return [await record.awaitable_attrs.date for record in records]
+        return None
 
 
 async def delete_user(user_id: int) -> bool:
@@ -218,9 +216,9 @@ async def delete_user(user_id: int) -> bool:
             try:
                 user = await session.get(User, user_id)
                 await session.delete(user)
-                return True
             except UnmappedInstanceError:
                 return False
+            return True
 
 
 async def delete_records(
@@ -243,11 +241,11 @@ async def delete_records(
 
 if __name__ == '__main__':
     asyncio.run(init_models())
-    user, activity = asyncio.run(
-        create_user(
-            'Mark.1',
-        )
-    )
+    # user, activity = asyncio.run(
+    #     create_user(
+    #         'Tester1 2',
+    #     )
+    # )
     # asyncio.run(create_record(user))
     # print(asyncio.run(get_user_records(1)))
     # print(asyncio.run(delete_records(1)))

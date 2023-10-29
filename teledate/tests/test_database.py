@@ -19,46 +19,46 @@ def event_loop():
 async def db_init():
     """Fixture for creating database."""
     async with db.async_engine.begin() as conn:
+        await conn.run_sync(db.Base.metadata.drop_all)
         await conn.run_sync(db.Base.metadata.create_all)
 
 
 @pytest.fixture()
-async def user() -> db.User:
+async def user() -> dict:
     """Fixture for creating the test user entry."""
     async with db.async_session() as session:
         async with session.begin():
             user = db.User(name='tester')
             session.add(user)
-        await session.commit()
-    return user
+    return {
+        'id': 1,
+        'name': 'tester',
+        'activity': 'Default',
+    }
 
 
 @pytest.fixture()
-async def record(user: db.User) -> db.Record:
+async def record(user: dict) -> dict:
     """Fixture for creating the test user entry."""
     async with db.async_session() as session:
         async with session.begin():
-            record = db.Record(user_id=user.id)
+            record = db.Record(user_id=user['id'])
             session.add(record)
-        await session.commit()
-    return record
-
-
-@pytest.fixture()
-async def db_clear():
-    """Fixture for cleaning database."""
-    yield
-    async with db.async_engine.begin() as conn:
-        await conn.run_sync(db.Base.metadata.drop_all)
+        date = await record.awaitable_attrs.date
+    return {
+        'id': 1,
+        'date': date,
+        'user_id': 1,
+    }
 
 
 # User tests
 
 
-async def test_create_user(db_clear):
+async def test_create_user():
     """Test creating user with valid username."""
     user_id, user_activity = await db.create_user('Tester1 2')
-    assert user_id, user_activity == (1, 'Default')
+    assert (user_id, user_activity) == (1, 'Default')
 
 
 async def test_cant_create_user_invalid_username():
@@ -67,10 +67,10 @@ async def test_cant_create_user_invalid_username():
     assert (user_id, user_activity) == (None, None)
 
 
-async def test_create_user_valid_activity(db_clear):
+async def test_create_user_valid_activity():
     """Test creating user with valid activity."""
     user_id, user_activity = await db.create_user('Tester', 'Activity 1')
-    assert user_id, user_activity == (1, 'Activity 1')
+    assert (user_id, user_activity) == (1, 'Activity 1')
 
 
 async def test_cant_create_user_invalid_activity():
@@ -79,10 +79,10 @@ async def test_cant_create_user_invalid_activity():
     assert (user_id, user_activity) == (None, None)
 
 
-async def test_get_user_info(user: db.User, db_clear):
+async def test_get_user_info(user: dict):
     """Test getting existing user info."""
-    user_id, user_activity = await db.get_user_info(user.name)
-    assert (user_id, user_activity) == (user.id, user.activity)
+    user_id, user_activity = await db.get_user_info(user['name'])
+    assert (user_id, user_activity) == (user['id'], user['activity'])
 
 
 async def test_get_nonexistent_user_info():
@@ -91,7 +91,7 @@ async def test_get_nonexistent_user_info():
     assert (user_id, user_activity) == (None, None)
 
 
-async def test_get_user_count(user: db.User, db_clear):
+async def test_get_user_count(user: dict):
     """Test getting user count."""
     user_count = await db.get_user_count()
     assert user_count == 1
@@ -100,9 +100,9 @@ async def test_get_user_count(user: db.User, db_clear):
 # Record tests
 
 
-async def test_create_record(user: db.User, db_clear):
+async def test_create_record(user: dict):
     """Test creating record of existing user."""
-    record_date = await db.create_record(user.id)
+    record_date = await db.create_record(user['id'])
     assert isinstance(record_date, datetime.datetime)
 
 
@@ -112,39 +112,41 @@ async def test_cant_create_record_nonexistent_user():
     assert record_date is None
 
 
-async def test_create_record_valid_dates(user: db.User, db_clear):
+async def test_create_record_valid_dates(user: dict):
     """Test creating record with valid dates."""
-    record_date = await db.create_record(user.id, None)
+    record_date = await db.create_record(user['id'], None)
     assert isinstance(record_date, datetime.datetime)
     dt = datetime.datetime(2000, 1, 1)
-    record_date = await db.create_record(user.id, dt)
+    record_date = await db.create_record(user['id'], dt)
     assert record_date == dt
 
 
-async def test_cant_create_record_invalid_date(user: db.User, db_clear):
+async def test_cant_create_records_invalid_dates(user: dict):
     """Test creating record with invalid date."""
-    record_date = await db.create_record(user.id, 'Not dt')
+    record_date = await db.create_record(user['id'], 'Not dt')
+    assert record_date is None
+    record_date = await db.create_record(user['id'], '')
     assert record_date is None
 
 
-async def test_get_all_records(record: db.Record, db_clear):
+async def test_get_all_records(record: dict):
     """Test getting all records."""
     records_dates: list = await db.get_all_records()
-    assert records_dates[0] == record.date
+    assert records_dates[0] == record['date']
 
 
-async def test_get_user_records(record: db.Record, db_clear):
+async def test_get_user_records(record: dict):
     """Test getting user records."""
-    records_dates: list = await db.get_user_records(record.user_id)
-    assert records_dates[0] == record.date
+    records_dates: list = await db.get_user_records(record['user_id'])
+    assert records_dates[0] == record['date']
     records_dates: list = await db.get_user_records(2)
     assert not records_dates
 
 
-async def test_get_last_user_record(record: db.Record, db_clear):
+async def test_get_last_user_record(record: dict):
     """Test getting last user record."""
-    record_date = await db.get_last_user_record(record.user_id)
-    assert record_date == record.date
+    record_date = await db.get_last_user_record(record['user_id'])
+    assert record_date == record['date']
     record_date = await db.get_last_user_record(2)
     assert not record_date
 
@@ -152,15 +154,17 @@ async def test_get_last_user_record(record: db.Record, db_clear):
 # User and Record tests
 
 
-async def test_delete_user_cascade_records(record: db.Record, db_clear):
+async def test_delete_user_cascade_records(record: dict):
     """Test getting last user record."""
     assert await db.get_all_records()
-    assert await db.delete_user(record.user_id) is True
+    assert await db.delete_user(record['user_id']) is True
     assert not await db.get_all_records()
 
 
 async def test_delete_user_nonexistent():
     """Test deleting nonexistent user."""
+    user_count = await db.get_user_count()
+    assert user_count == 0
     assert await db.delete_user(1) is False
 
 
