@@ -3,6 +3,6 @@ python-telegram-bot[job-queue]
 sqlalchemy[asyncio]
 aiosqlite
 matplotlib
-mysqlclient
 pytest
 pytest-asyncio
+mysqlclient

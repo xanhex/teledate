@@ -7,12 +7,12 @@ Bot commands:
     - `/end` - End the conversation
 """
 import datetime
+import logging
 import re
 from functools import partial
+from pathlib import Path
 
-import database as db
 from decouple import config
-from exceptions import TeledateError
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -23,7 +23,26 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+filePath = BASE_DIR / 'data' / 'teledate.log'
+
+filePath.touch(exist_ok=True)
+
+import database as db
+from exceptions import TeledateError
 from utils import ReplyMarkups, get_graph, get_time_since
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    filename=filePath,
+    filemode='w',
+    encoding='utf-8',
+    format='%(asctime)s %(name)s [%(levelname)s] %(message)s',
+    datefmt='%d.%m.%y %H:%M:%S',
+)
+
 
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')
 

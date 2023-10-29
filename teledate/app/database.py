@@ -13,7 +13,6 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.exc import IntegrityError, StatementError
-from sqlalchemy.orm.exc import UnmappedInstanceError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import (
     Mapped,
@@ -22,6 +21,7 @@ from sqlalchemy.orm import (
     relationship,
     sessionmaker,
 )
+from sqlalchemy.orm.exc import UnmappedInstanceError
 
 DB_URL = config(
     'MYSQL_URL',
@@ -94,6 +94,7 @@ async def init_models() -> None:
 
 
 # CRUD
+
 
 async def create_user(
     username: str,
@@ -242,7 +243,11 @@ async def delete_records(
 
 if __name__ == '__main__':
     asyncio.run(init_models())
-    user, activity = asyncio.run(create_user('Mark.1',))
+    user, activity = asyncio.run(
+        create_user(
+            'Mark.1',
+        )
+    )
     # asyncio.run(create_record(user))
     # print(asyncio.run(get_user_records(1)))
     # print(asyncio.run(delete_records(1)))

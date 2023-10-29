@@ -16,8 +16,6 @@ Bot commands:
 - SQLAlchemy
 - Pytest
 - MySQL
-- Uvicorn
-- Docker
 
 ## Standards
 
@@ -32,12 +30,12 @@ Bot commands:
 2. From the root folder run:
 
     ```bash
-    docker compose up
+    python teledate/app/main.py
     ```
+
+3. Check log at teledate/data/teledate.log
 
 ## TBD
 
-- Add `Pytest` tests
-- Add logging
 - Add the ability to add multiple records for a user
-- Add demonization (`Uvicorn`) and `Docker`
+- Cover the rest of the functionality with `Pytest` tests

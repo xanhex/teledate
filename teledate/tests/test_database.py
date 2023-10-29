@@ -54,6 +54,7 @@ async def db_clear():
 
 # User tests
 
+
 async def test_create_user(db_clear):
     """Test creating user with valid username."""
     user_id, user_activity = await db.create_user('Tester1 2')
@@ -97,6 +98,7 @@ async def test_get_user_count(user: db.User, db_clear):
 
 
 # Record tests
+
 
 async def test_create_record(user: db.User, db_clear):
     """Test creating record of existing user."""
@@ -148,6 +150,7 @@ async def test_get_last_user_record(record: db.Record, db_clear):
 
 
 # User and Record tests
+
 
 async def test_delete_user_cascade_records(record: db.Record, db_clear):
     """Test getting last user record."""
