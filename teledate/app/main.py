@@ -10,7 +10,9 @@ import datetime
 import re
 from functools import partial
 
+import database as db
 from decouple import config
+from exceptions import TeledateError
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -21,9 +23,6 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-
-import database as db
-from exceptions import TeledateError
 from utils import ReplyMarkups, get_graph, get_time_since
 
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')

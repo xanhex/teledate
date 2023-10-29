@@ -14,7 +14,7 @@ __pycache__/
 .mypy_cache
 
 # Additional
-tests/
+/tests
 Makefile
 bot.log
 requirements_dev.txt

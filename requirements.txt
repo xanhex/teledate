@@ -5,3 +5,4 @@ aiosqlite
 matplotlib
 mysqlclient
 pytest
+pytest-asyncio

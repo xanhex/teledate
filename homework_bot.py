@@ -7,11 +7,10 @@ from functools import wraps
 from operator import itemgetter
 from typing import Any, Dict, Union
 
+import exeptions
 import requests
 import telegram
 from decouple import config
-
-import exeptions
 
 PRACTICUM_TOKEN = config('PRACTICUM_TOKEN', default='123')
 TELEGRAM_TOKEN = config('TELEGRAM_TOKEN', default='123')

@@ -12,6 +12,8 @@ from sqlalchemy import (
     func,
     select,
 )
+from sqlalchemy.exc import IntegrityError, StatementError
+from sqlalchemy.orm.exc import UnmappedInstanceError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import (
     Mapped,
@@ -21,10 +23,9 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
-from exceptions import TeledateError
-
 DB_URL = config(
-    'MYSQL_URL', default='sqlite+aiosqlite:///teledate/data/sqlite.db',
+    'MYSQL_URL',
+    default='sqlite+aiosqlite:///teledate/data/sqlite.db',
 )
 USER_LIMIT = 2
 RECORDS_LIMIT = 30
@@ -94,6 +95,30 @@ async def init_models() -> None:
 
 # CRUD
 
+async def create_user(
+    username: str,
+    activity: str | None = None,
+) -> tuple[int, str] | tuple[None]:
+    """
+    Create a user entry in the database.
+
+    Returns:
+        The user ID and the user activity name, None otherwise.
+    """
+    async with async_session() as session:
+        try:
+            async with session.begin():
+                user = User(
+                    name=username,
+                    activity=activity,
+                )
+                session.add(user)
+            await session.commit()
+            return user.id, user.activity
+        except IntegrityError:
+            await session.rollback()
+            return None, None
+
 
 async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
     """
@@ -107,10 +132,9 @@ async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
             user: User = await session.scalar(
                 select(User).where(User.name == username),
             )
-            try:
+            if user:
                 return user.id, user.activity
-            except TeledateError:
-                return None, None
+            return None, None
 
 
 async def get_user_count() -> int:
@@ -120,70 +144,6 @@ async def get_user_count() -> int:
             return await session.scalar(
                 select(func.count()).select_from(User),
             )
-
-
-async def create_user(
-    username: str,
-    activity: str | None = None,
-) -> tuple[int, str] | tuple[None]:
-    """
-    Create a user entry in the database.
-
-    Returns:
-        The user ID and the user activity name, None otherwise.
-    """
-    async with async_session() as session:
-        async with session.begin():
-            user = User(
-                name=username,
-                activity=activity,
-            )
-            session.add(user)
-        try:
-            await session.commit()
-            return user.id, user.activity
-        except TeledateError:
-            await session.rollback()
-            return None, None
-
-
-async def get_last_user_record(user_id: int) -> datetime.datetime | None:
-    """Get info on the last user's record in the database."""
-    async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(
-                select(Record)
-                .where(Record.user_id == user_id)
-                .order_by(Record.id.desc()),
-            )
-            try:
-                return records.first().date
-            except TeledateError:
-                return None
-
-
-async def get_user_records(user_id: int) -> list[datetime.datetime] | None:
-    """Get the dates of the user's records in the database."""
-    async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(
-                select(Record).where(Record.user_id == user_id),
-            )
-            try:
-                return [record.date for record in records]
-            except TeledateError:
-                return None
-
-
-async def get_all_records() -> list[datetime.datetime] | None:
-    """Get the dates of all records in the database."""
-    async with async_session() as session:
-        async with session.begin():
-            records: list[Record] = await session.scalars(select(Record))
-            try:
-                return [record.date for record in records]
-            except TeledateError:
-                return None
 
 
 async def create_record(
@@ -197,20 +157,57 @@ async def create_record(
         The user's record info, None otherwise.
     """
     async with async_session() as session:
+        try:
+            async with session.begin():
+                if not await session.get(User, user_id):
+                    return None
+                record = Record(
+                    user_id=user_id,
+                    date=date,
+                )
+                session.add(record)
+            await session.commit()
+            return record.date
+        except StatementError:
+            await session.rollback()
+            return None
+
+
+async def get_last_user_record(user_id: int) -> datetime.datetime | None:
+    """Get info on the last user's record in the database."""
+    async with async_session() as session:
         async with session.begin():
-            if not await session.get(User, user_id):
-                return None
-            record = Record(
-                user_id=user_id,
-                date=date,
+            records: list[Record] = await session.scalars(
+                select(Record)
+                .where(Record.user_id == user_id)
+                .order_by(Record.id.desc()),
             )
-            session.add(record)
-            try:
-                await session.commit()
+            record = records.first()
+            if record:
                 return record.date
-            except TeledateError:
-                await session.rollback()
-                return None
+            return None
+
+
+async def get_user_records(user_id: int) -> list[datetime.datetime] | None:
+    """Get the dates of the user's records in the database."""
+    async with async_session() as session:
+        async with session.begin():
+            records: list[Record] = await session.scalars(
+                select(Record).where(Record.user_id == user_id),
+            )
+            if records:
+                return [record.date for record in records]
+            return None
+
+
+async def get_all_records() -> list[datetime.datetime] | None:
+    """Get the dates of all records in the database."""
+    async with async_session() as session:
+        async with session.begin():
+            records: list[Record] = await session.scalars(select(Record))
+            if records:
+                return [record.date for record in records]
+            return None
 
 
 async def delete_user(user_id: int) -> bool:
@@ -221,7 +218,7 @@ async def delete_user(user_id: int) -> bool:
                 user = await session.get(User, user_id)
                 await session.delete(user)
                 return True
-            except TeledateError:
+            except UnmappedInstanceError:
                 return False
 
 
@@ -238,25 +235,21 @@ async def delete_records(
             records: list[Record] = records_sr.all()
             if not records:
                 return False
-            try:
-                for record in records:
-                    await session.delete(record)
-                return True
-            except TeledateError:
-                await session.rollback()
-                return False
+            for record in records:
+                await session.delete(record)
+            return True
 
 
 if __name__ == '__main__':
     asyncio.run(init_models())
-    # user, activity = asyncio.run(create_user('Mark', 'Marko   Polo12'))
+    user, activity = asyncio.run(create_user('Mark.1',))
     # asyncio.run(create_record(user))
     # print(asyncio.run(get_user_records(1)))
     # print(asyncio.run(delete_records(1)))
     # print(asyncio.run(get_user_records(1)))
 
     # print(asyncio.run(create_user('xanhex')))
-    # print(asyncio.run(get_user_info('xanhex')))
+    # print(asyncio.run(get_user_info('Tester')))
     # print(asyncio.run(get_user_count()))
     # print(asyncio.run(get_all_records()))
     # print(asyncio.run(delete_user(1)))
