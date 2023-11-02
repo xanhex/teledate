@@ -63,7 +63,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     db_user_activity = context.user_data.get('db_user_activity')
     reminder = context.user_data.get('reminder')
     if not db_user_id:
-        db_user_id, db_user_activity = await db.get_user_info(
+        db_user_id, db_user_activity = await db.get_user_id(
             username,
         )
         (
@@ -109,7 +109,7 @@ async def database(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     db_user_id = context.user_data.get('db_user_id')
     db_user_activity = context.user_data.get('db_user_activity')
     if not db_user_id:
-        db_user_id, db_user_activity = await db.get_user_info(
+        db_user_id, db_user_activity = await db.get_user_id(
             update.effective_user.username,
         )
         (
@@ -259,6 +259,7 @@ async def main_messages(
         - Reminder - proceed to the reminder settings
         - Add record [params] - add a new user's record
     """
+    username = update.effective_user.username
     db_user_id = context.user_data.get('db_user_id')
     db_user_activity = context.user_data.get('db_user_activity')
     reminder = context.user_data.get('reminder')
@@ -291,9 +292,15 @@ async def main_messages(
                 except TeledateError:
                     text = "Can't load the graph"
         case 'Reminder' | 'Reminder: On' | 'Reminder: Off':
+            if not await db.get_last_user_record(db_user_id):
+                await update.effective_message.reply_text(
+                    'You have no records',
+                    reply_markup=ReplyMarkups.main,
+                )
+                return None
             await update.effective_message.reply_text(
                 (
-                    f'{context.job_queue.get_jobs_by_name(update.effective_user.username)[0].data[2]}\n\n'
+                    f'{context.job_queue.get_jobs_by_name(username)[0].data[2]}\n\n'  # noqa: E501
                     r'Unset\?'
                 )
                 if reminder
@@ -318,6 +325,11 @@ async def main_messages(
                     "Can't create a record",
                 )
                 return None
+            if reminder:
+                current_jobs = context.job_queue.get_jobs_by_name(username)
+                for job in current_jobs:
+                    job.schedule_removal()
+                context.user_data['reminder'] = False
             text = f'*{db_user_activity}*\n\n{created}'
     await update.effective_message.reply_text(
         text,
@@ -369,7 +381,7 @@ async def reminder_manage(
                 return MAIN
         if not unset:
             params: list | None = re.findall(r'(\d{1,2})', command)
-            interval, start = datetime.timedelta(hours=48), datetime.time(9)
+            interval = datetime.timedelta(hours=48)
             every_hours = 48
             if params:
                 interval = datetime.timedelta(hours=int(params[0]))
@@ -377,6 +389,7 @@ async def reminder_manage(
             record_date: datetime.datetime = await db.get_last_user_record(
                 db_user_id,
             )
+            # Moscow Time (UTC+3)
             start = record_date + datetime.timedelta(hours=3)
             # interval = 5  # For 5 sec inteval tests
             message = (
@@ -387,7 +400,7 @@ async def reminder_manage(
             context.job_queue.run_repeating(
                 alarm,
                 interval,
-                first=start,
+                first=record_date,
                 chat_id=chat_id,
                 name=username,
                 data=(db_user_id, db_user_activity, message),
@@ -448,10 +461,11 @@ async def get_status(db_user_id: int) -> tuple[str] | None:
     if not record_dt:
         return None
     # Moscow Time (UTC+3)
+    time_since = get_time_since(record_dt)
     record_dt += datetime.timedelta(hours=3)
     return (
         record_dt.strftime('%d.%m.%Y %H:%M:%S'),
-        get_time_since(record_dt),
+        time_since,
     )
 
 

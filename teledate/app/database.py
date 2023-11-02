@@ -91,7 +91,7 @@ async def init_models() -> None:
     """Create all tables on app startup."""
     async with async_engine.begin() as conn:
         # To clear DB before re-creating it
-        await conn.run_sync(Base.metadata.drop_all)
+        # await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
 
@@ -101,7 +101,7 @@ async def init_models() -> None:
 async def create_user(
     name: str,
     activity: str = 'Default',
-) -> tuple[int, str] | tuple[None]:
+) -> tuple[int, str] | tuple[None, None]:
     """
     Create a user entry in the database.
 
@@ -124,20 +124,44 @@ async def create_user(
         )
 
 
-async def get_user_info(username: str) -> tuple[int, str] | tuple[None]:
+async def get_user_id(username: str) -> tuple[int, str] | tuple[None, None]:
     """
-    Get a user ID in the database.
+    Get the user ID and the user activity from the database.
 
     Returns:
         The user ID and the user activity name, None otherwise.
     """
     async with async_session() as session:
-        user: User = await session.scalar(
+        user: User | None = await session.scalar(
             select(User).where(User.name == username),
         )
         if user:
             return user.id, user.activity
         return None, None
+
+
+async def get_user_info(user_id: int) -> tuple[str, str] | tuple[None, None]:
+    """
+    Get user info.
+
+    Returns:
+        The the user name and the user activity, None otherwise.
+    """
+    async with async_session() as session:
+        try:
+            user = await session.get(User, user_id)
+            return user.name, user.activity
+        except (UnmappedInstanceError, AttributeError):
+            return None, None
+
+
+async def get_users_list() -> list[tuple[int, str]]:
+    """Get the list of all users."""
+    async with async_session() as session:
+        users: list[User] = await session.scalars(select(User))
+        if users:
+            return [(user.id, user.name) for user in users]
+        return []
 
 
 async def get_user_count() -> int:
@@ -150,7 +174,7 @@ async def get_user_count() -> int:
 
 async def create_record(
     user_id: int,
-    date: datetime.datetime = None,
+    date: datetime.datetime | None = None,
 ) -> datetime.datetime | None:
     """
     Create a user's record in the database.
@@ -241,21 +265,6 @@ async def delete_records(
 
 if __name__ == '__main__':
     asyncio.run(init_models())
-    # user, activity = asyncio.run(
-    #     create_user(
-    #         'Tester1 2',
-    #     )
-    # )
-    # asyncio.run(create_record(user))
-    # print(asyncio.run(get_user_records(1)))
-    # print(asyncio.run(delete_records(1)))
-    # print(asyncio.run(get_user_records(1)))
-
-    # print(asyncio.run(create_user('xanhex')))
-    # print(asyncio.run(get_user_info('Tester')))
-    # print(asyncio.run(get_user_count()))
-    # print(asyncio.run(get_all_records()))
-    # print(asyncio.run(delete_user(1)))
-    # print(asyncio.run(get_user_info('xanhex')))
-    # print(asyncio.run(get_user_count()))
-    # print(asyncio.run(get_all_records()))
+    print(asyncio.run(get_users_list()))
+    # print(asyncio.run(get_user_info()))
+    # print(asyncio.run(delete_user()))

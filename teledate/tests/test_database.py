@@ -81,13 +81,13 @@ async def test_cant_create_user_invalid_activity():
 
 async def test_get_user_info(user: dict):
     """Test getting existing user info."""
-    user_id, user_activity = await db.get_user_info(user['name'])
+    user_id, user_activity = await db.get_user_id(user['name'])
     assert (user_id, user_activity) == (user['id'], user['activity'])
 
 
 async def test_get_nonexistent_user_info():
     """Test getting non-existent user info."""
-    user_id, user_activity = await db.get_user_info('tester')
+    user_id, user_activity = await db.get_user_id('tester')
     assert (user_id, user_activity) == (None, None)
 
 
