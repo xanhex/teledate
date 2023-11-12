@@ -102,7 +102,7 @@ async def database(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     username = update.effective_user.username
     if not username:
         await update.effective_message.reply_text(
-            'To work the me you need to set up your Telegram username',
+            'To work with me you need to set up your Telegram username',
             reply_markup=ReplyMarkups.end,
         )
         return ConversationHandler.END
@@ -121,8 +121,8 @@ async def database(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
     if db_user_id:
         await update.effective_message.reply_text(
-            'Database exists. Do you want to delete it?',
-            reply_markup=ReplyMarkups.db_delete,
+            'Database exists. What do you wanna do?',
+            reply_markup=ReplyMarkups.db_exists,
         )
         return DB_MANAGE
     if await db.get_user_count() >= db.USER_LIMIT:
@@ -148,6 +148,7 @@ async def database_manage(
     Messages:
         - Create database - proceed to database activity setup
         - Delete database - end the conversation upon deletion
+        - Delete last record - stays in the database management upon deletion
         - Cancel - cancel the operation and gets back to previous state
     """
     db_user_id = context.user_data.get('db_user_id')
@@ -185,6 +186,23 @@ async def database_manage(
             reply_markup=ReplyMarkups.end,
         )
         return ConversationHandler.END
+    if db_user_id and message == 'Delete last record':
+        last_record_del = await db.delete_last_record(db_user_id)
+        if not last_record_del:
+            await update.effective_message.reply_text(
+                "Can't delete the last record. Maybe it doesn't exists?",
+                reply_markup=ReplyMarkups.db_exists,
+            )
+            return None
+        if reminder:
+            for job in current_jobs:
+                job.schedule_removal()
+        context.user_data['reminder'] = False
+        await update.effective_message.reply_text(
+            'The last record has been deleted',
+            reply_markup=ReplyMarkups.db_exists,
+        )
+        return None
 
     # Database doesn't exists
     if not db_user_id and message == 'Create database':
@@ -554,22 +572,23 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[
             MessageHandler(
-                filters.Regex('^(Manage database|/database)$'),
+                filters.Regex(r'^(Manage database|/database)$'),
                 database,
             ),
-            MessageHandler(filters.Regex('^(Start|/start)$'), start),
+            MessageHandler(filters.Regex(r'^(Start|/start)$'), start),
         ],
         states={
             DB: [
                 MessageHandler(
-                    ~filters.Regex('^(/end|Manage database|/database)$'),
+                    ~filters.Regex(r'^(/end|Manage database|/database)$'),
                     invalid_input,
                 ),
             ],
             DB_MANAGE: [
                 MessageHandler(
                     filters.Regex(
-                        '^(Create database|Delete database|Cancel)$',
+                        r'^(Create database|Delete database|Delete last record'
+                        r'|Cancel)$',
                     ),
                     database_manage,
                 ),
@@ -601,7 +620,7 @@ def main() -> None:
                     main_messages,
                 ),
                 MessageHandler(
-                    ~filters.Regex('^(/end|Manage database|/database)$'),
+                    ~filters.Regex(r'^(/end|Manage database|/database)$'),
                     partial(
                         invalid_input,
                         extra_message=(
@@ -617,7 +636,7 @@ def main() -> None:
                     reminder_manage,
                 ),
                 MessageHandler(
-                    ~filters.Regex('^(/end|Manage database|/database)$'),
+                    ~filters.Regex(r'^(/end|Manage database|/database)$'),
                     invalid_input,
                 ),
             ],
@@ -625,7 +644,7 @@ def main() -> None:
         fallbacks=[
             CommandHandler('end', end),
             MessageHandler(
-                filters.Regex('^(Manage database|/database)$'),
+                filters.Regex(r'^(Manage database|/database)$'),
                 database,
             ),
         ],

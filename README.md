@@ -16,12 +16,20 @@ From the main menu you can perform commands with messages:
 - `Reminder` - set or unset reminder with specified time interval
 (default: 48 hours)
 
+From the database management menu you can perform commands with messages:
+
+- `Create database` - create a database for the current user
+- `Delete database` - delete the current user's database
+- `Delete last record` - delete the last user record
+
+
 ## Technologies
 
 - Python
 - Python Telegram Bot
 - Asyncio
 - SQLAlchemy
+- Matplotlib
 - Pytest
 - MySQL
 - SQLite

@@ -263,6 +263,22 @@ async def delete_records(
             return True
 
 
+async def delete_last_record(user_id: int) -> bool:
+    """Delete the last user's record from the database."""
+    async with async_session() as session:
+        async with session.begin():
+            records: list[Record] = await session.scalars(
+                select(Record)
+                .where(Record.user_id == user_id)
+                .order_by(Record.id.desc()),
+            )
+            record = records.first()
+            if record:
+                await session.delete(record)
+                return True
+            return False
+
+
 if __name__ == '__main__':
     asyncio.run(init_models())
     print(asyncio.run(get_users_list()))

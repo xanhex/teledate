@@ -52,6 +52,16 @@ async def record(user: dict) -> dict:
     }
 
 
+@pytest.fixture()
+async def records(user: dict) -> dict:
+    """Fixture for creating the test user entry."""
+    async with db.async_session() as session:
+        async with session.begin():
+            for _ in range(5):
+                record = db.Record(user_id=user['id'])
+                session.add(record)
+
+
 # User tests
 
 
@@ -144,11 +154,27 @@ async def test_get_user_records(record: dict):
 
 
 async def test_get_last_user_record(record: dict):
-    """Test getting last user record."""
+    """Test getting the last user record."""
     record_date = await db.get_last_user_record(record['user_id'])
     assert record_date == record['date']
     record_date = await db.get_last_user_record(2)
     assert not record_date
+
+
+async def test_delete_last_user_record(records):
+    """Test deletion of the last user record."""
+    record_del = await db.delete_last_record(1)
+    assert record_del is True
+    records_after = await db.get_user_records(1)
+    assert len(records_after) == 4
+
+
+async def test_delete_user_records(records):
+    """Test deletion of the last user record."""
+    record_del = await db.delete_records(1, 4)
+    assert record_del is True
+    records_after = await db.get_user_records(1)
+    assert len(records_after) == 1
 
 
 # User and Record tests

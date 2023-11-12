@@ -17,9 +17,13 @@ class ReplyMarkups:
         resize_keyboard=True,
         is_persistent=True,
     )
-    db_delete = ReplyKeyboardMarkup(
+    db_exists = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton('Delete database'), KeyboardButton('Cancel')],
+            [
+                KeyboardButton('Delete database'),
+                KeyboardButton('Delete last record'),
+            ],
+            [KeyboardButton('Cancel')],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -97,7 +101,7 @@ async def get_graph(
     y = []
     for record in records_dt:
         conv_record = record + datetime.timedelta(hours=3)
-        x.append(conv_record.strftime('%d.%m'))
+        x.append(conv_record.strftime('%a %d.%m'))
         if not y:
             prev_date = conv_record - datetime.timedelta(hours=48)
         y.append(floor((conv_record - prev_date).total_seconds() / 60 / 60))
